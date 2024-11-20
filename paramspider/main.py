@@ -3,9 +3,9 @@ import os
 import logging
 import colorama
 from colorama import Fore, Style
-from . import client  # Importing client from a module named "client"
 from urllib.parse import urlparse, parse_qs, urlencode
-import os
+import requests
+from . import client  # Importing client from a module named "client"
 
 yellow_color_code = "\033[93m"
 reset_color_code = "\033[0m"
@@ -24,13 +24,6 @@ HARDCODED_EXTENSIONS = [
 def has_extension(url, extensions):
     """
     Check if the URL has a file extension matching any of the provided extensions.
-
-    Args:
-        url (str): The URL to check.
-        extensions (list): List of file extensions to match against.
-
-    Returns:
-        bool: True if the URL has a matching extension, False otherwise.
     """
     parsed_url = urlparse(url)
     path = parsed_url.path
@@ -41,12 +34,6 @@ def has_extension(url, extensions):
 def clean_url(url):
     """
     Clean the URL by removing redundant port information for HTTP and HTTPS URLs.
-
-    Args:
-        url (str): The URL to clean.
-
-    Returns:
-        str: Cleaned URL.
     """
     parsed_url = urlparse(url)
     
@@ -58,13 +45,6 @@ def clean_url(url):
 def clean_urls(urls, extensions, placeholder):
     """
     Clean a list of URLs by removing unnecessary parameters and query strings.
-
-    Args:
-        urls (list): List of URLs to clean.
-        extensions (list): List of file extensions to check against.
-
-    Returns:
-        list: List of cleaned URLs.
     """
     cleaned_urls = set()
     for url in urls:
@@ -78,21 +58,32 @@ def clean_urls(urls, extensions, placeholder):
             cleaned_urls.add(cleaned_url)
     return list(cleaned_urls)
 
-def fetch_and_clean_urls(domain, extensions, stream_output,proxy, placeholder):
+def send_slack_notification(slack_webhook_url, message):
     """
-    Fetch and clean URLs related to a specific domain from the Wayback Machine.
-
+    Sends a notification to a Slack channel using a webhook URL.
+    
     Args:
-        domain (str): The domain name to fetch URLs for.
-        extensions (list): List of file extensions to check against.
-        stream_output (bool): True to stream URLs to the terminal.
-
+        slack_webhook_url (str): The Slack webhook URL.
+        message (str): The message to send.
+    
     Returns:
         None
     """
+    payload = {"text": message}
+    try:
+        response = requests.post(slack_webhook_url, json=payload)
+        if response.status_code != 200:
+            logging.error(f"Failed to send Slack notification: {response.text}")
+    except Exception as e:
+        logging.error(f"Error sending Slack notification: {e}")
+
+def fetch_and_clean_urls(domain, extensions, stream_output, proxy, placeholder, slack_webhook_url):
+    """
+    Fetch and clean URLs related to a specific domain from the Wayback Machine.
+    """
     logging.info(f"{Fore.YELLOW}[INFO]{Style.RESET_ALL} Fetching URLs for {Fore.CYAN + domain + Style.RESET_ALL}")
     wayback_uri = f"https://web.archive.org/cdx/search/cdx?url={domain}/*&output=txt&collapse=urlkey&fl=original&page=/"
-    response = client.fetch_url_content(wayback_uri,proxy)
+    response = client.fetch_url_content(wayback_uri, proxy)
     urls = response.text.split()
     
     logging.info(f"{Fore.YELLOW}[INFO]{Style.RESET_ALL} Found {Fore.GREEN + str(len(urls)) + Style.RESET_ALL} URLs for {Fore.CYAN + domain + Style.RESET_ALL}")
@@ -116,6 +107,10 @@ def fetch_and_clean_urls(domain, extensions, stream_output,proxy, placeholder):
                     print(url)
     
     logging.info(f"{Fore.YELLOW}[INFO]{Style.RESET_ALL} Saved cleaned URLs to {Fore.CYAN + result_file + Style.RESET_ALL}")
+    
+    # Send Slack notification after processing
+    if slack_webhook_url:
+        send_slack_notification(slack_webhook_url, f"Processed and cleaned URLs for domain: {domain}. Total URLs: {len(cleaned_urls)}")
 
 def main():
     """
@@ -133,12 +128,14 @@ def main():
     """
     colored_log_text = f"{yellow_color_code}{log_text}{reset_color_code}"
     print(colored_log_text)
+    
     parser = argparse.ArgumentParser(description="Mining URLs from dark corners of Web Archives ")
     parser.add_argument("-d", "--domain", help="Domain name to fetch related URLs for.")
     parser.add_argument("-l", "--list", help="File containing a list of domain names.")
     parser.add_argument("-s", "--stream", action="store_true", help="Stream URLs on the terminal.")
-    parser.add_argument("--proxy", help="Set the proxy address for web requests.",default=None)
-    parser.add_argument("-p", "--placeholder", help="placeholder for parameter values", default="FUZZ")
+    parser.add_argument("--proxy", help="Set the proxy address for web requests.", default=None)
+    parser.add_argument("-p", "--placeholder", help="Placeholder for parameter values", default="FUZZ")
+    parser.add_argument("--slack", help="Slack webhook URL for notifications", default=None)
     args = parser.parse_args()
 
     if not args.domain and not args.list:
@@ -158,11 +155,11 @@ def main():
     extensions = HARDCODED_EXTENSIONS
 
     if args.domain:
-        fetch_and_clean_urls(domain, extensions, args.stream, args.proxy, args.placeholder)
+        fetch_and_clean_urls(domain, extensions, args.stream, args.proxy, args.placeholder, args.slack)
 
     if args.list:
         for domain in domains:
-            fetch_and_clean_urls(domain, extensions, args.stream,args.proxy, args.placeholder)
+            fetch_and_clean_urls(domain, extensions, args.stream, args.proxy, args.placeholder, args.slack)
 
 if __name__ == "__main__":
     main()
