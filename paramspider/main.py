@@ -108,9 +108,13 @@ def fetch_and_clean_urls(domain, extensions, stream_output, proxy, placeholder, 
     
     logging.info(f"{Fore.YELLOW}[INFO]{Style.RESET_ALL} Saved cleaned URLs to {Fore.CYAN + result_file + Style.RESET_ALL}")
     
-    # Send Slack notification after processing
+    # Format the message for Slack with all cleaned URLs
+    slack_message = f"Processed and cleaned URLs for domain: {domain}. Total URLs: {len(cleaned_urls)}\n"
+    slack_message += "\n".join(cleaned_urls)  # Add the full list of cleaned URLs
+
+    # Send Slack notification with full data
     if slack_webhook_url:
-        send_slack_notification(slack_webhook_url, f"Processed and cleaned URLs for domain: {domain}. Total URLs: {len(cleaned_urls)}")
+        send_slack_notification(slack_webhook_url, slack_message)
 
 def main():
     """
